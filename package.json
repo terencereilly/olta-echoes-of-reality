@@ -13,9 +13,10 @@
   "scripts": {
     "start": "yarn dist:fresh",
     "dev": "yarn dev:parcel & yarn dev:arweave",
-    "dev:fresh": "yarn dev:parcel --no-cache & yarn dev:arweave",
+    "dev:fresh": "yarn dev:parcel:fresh & yarn dev:arweave",
     "dev:parcel": "parcel --target app --log-level verbose",
-    "dev:arweave": "npx arlocal",
+    "dev:parcel:fresh": "yarn dev:parcel --no-cache",
+    "dev:arweave": "npx --yes arlocal",
     "dist": "yarn clean && yarn build",
     "dist:fresh": "yarn clean && yarn build:fresh",
     "build": "parcel build --target app --no-source-maps",
@@ -29,12 +30,14 @@
     "setup:tsc": "yarn tsc"
   },
   "dependencies": {
-    "@olta/js-sdk": "^0.0.5"
+    "@olta/js-sdk": "^0.0.5",
+    "three": "^0.162.0"
   },
   "devDependencies": {
     "@parcel/core": "^2.10.3",
     "@parcel/optimizer-data-url": "2.10.3",
     "@parcel/packager-raw-url": "2.10.3",
+    "@parcel/runtime-browser-hmr": "2.10.3",
     "@parcel/transformer-inline-string": "2.10.3",
     "@parcel/transformer-webmanifest": "2.10.3",
     "parcel": "^2.10.3",
