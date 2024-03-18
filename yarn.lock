@@ -51,6 +51,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@epok.tech/fn-lists@npm:^0.1.4":
+  version: 0.1.4
+  resolution: "@epok.tech/fn-lists@npm:0.1.4"
+  checksum: a09750e1711578803aa099ee9c71414b16d87d337e229c967ce9942f033144d4d40262af8eb06d5804636d61663a2e8a6983c8d98b2d044df8336d724817d277
+  languageName: node
+  linkType: hard
+
 "@isaacs/cliui@npm:^8.0.2":
   version: 8.0.2
   resolution: "@isaacs/cliui@npm:8.0.2"
@@ -1597,6 +1604,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"camera-controls@npm:^2.8.3":
+  version: 2.8.3
+  resolution: "camera-controls@npm:2.8.3"
+  peerDependencies:
+    three: ">=0.126.1"
+  checksum: dbd3e794b690c27ad4cccfac1b2bdfa36b2f516b917d4093bce284d2edb14e4e040c6e1b9d4dcfb609f671968663300dc6a591366f4306fd5cdf4b5f3acf546a
+  languageName: node
+  linkType: hard
+
 "caniuse-lite@npm:^1.0.30001587":
   version: 1.0.30001597
   resolution: "caniuse-lite@npm:1.0.30001597"
@@ -2814,6 +2830,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "olta-echoes-of-reality@workspace:."
   dependencies:
+    "@epok.tech/fn-lists": ^0.1.4
     "@olta/js-sdk": ^0.0.5
     "@parcel/core": ^2.10.3
     "@parcel/optimizer-data-url": 2.10.3
@@ -2821,6 +2838,7 @@ __metadata:
     "@parcel/runtime-browser-hmr": 2.10.3
     "@parcel/transformer-inline-string": 2.10.3
     "@parcel/transformer-webmanifest": 2.10.3
+    camera-controls: ^2.8.3
     parcel: ^2.10.3
     postcss: ^8.0.0
     postcss-import: ^15.1.0
