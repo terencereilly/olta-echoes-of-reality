@@ -7,7 +7,7 @@ import {
     HemisphereLight, PointLight, Color, MathUtils, Fog, DoubleSide
   } from 'three';
 
-// import { Stats } from 'three/addons/libs/stats.module.js';
+import Stats from 'three/examples/jsm/libs/stats.module.js';
 import CameraOrbitControls from 'camera-controls';
 
 import { each } from '@epok.tech/fn-lists/each';
@@ -37,6 +37,8 @@ const colors = api.colors = {
 const $body = api.$body = document.body;
 const $canvas = api.$canvas = document.querySelector('canvas');
 
+const size = new Vector2();
+
 CameraOrbitControls.install({
   THREE: {
     WebGLRenderer, Raycaster,
@@ -50,11 +52,9 @@ const renderer = api.renderer =
 renderer.setPixelRatio(devicePixelRatio);
 
 const scene = api.scene = new Scene();
+const clock = api.clock = new Clock();
 const camera = api.camera = new PerspectiveCamera(60, 1, ...depths);
 const orbit = api.orbit = new CameraOrbitControls(camera, $canvas);
-
-camera.position.set(0, 0, lerp(...depths, 0.5));
-camera.lookAt(0, 0, 0);
 
 orbit.infinityDolly = orbit.dollyToCursor = true;
 orbit.dollyTo(orbit.minDistance = orbit.maxDistance = lerp(...depths, 0.2));
@@ -71,9 +71,7 @@ const lightSky = api.lightSky = new HemisphereLight(0xffffff, 0x000000, 3);
 scene.add(lightSky);
 
 const geometry = api.geometry = new IcosahedronGeometry(1, 3);
-
-const material = api.material =
-  new MeshStandardMaterial({ transparent: true, opacity: 0.5, side: DoubleSide });
+const material = api.material = new MeshStandardMaterial();
 
 const transform = new Matrix4();
 const color = new Color();
@@ -81,11 +79,11 @@ let forms;
 let fl;
 
 const raycaster = api.raycaster = new Raycaster();
-const mouse = api.mouse = new Vector2(1, 1);
-const clock = api.clock = new Clock();
+const pointer = api.pointer = new Vector2(1, 1);
+const axes = api.axes = new Vector2(1, -1);
 
-// stats = api.stats = new Stats();
-// $body.appendChild(stats.dom);
+stats = api.stats = new Stats();
+$body.appendChild(stats.dom);
 
 const render = api.render = () =>
   console.log('render', renderer.render(scene, camera));
@@ -93,9 +91,10 @@ const render = api.render = () =>
 const resize = api.resize = () => {
   const { width: w, height: h } = $canvas.getBoundingClientRect();
 
+  size.set(w, h);
+  renderer.setSize(w, h, 0);
   camera.aspect = w/h;
   camera.updateProjectionMatrix();
-  renderer.setSize(w, h, 0);
   render();
 };
 
@@ -105,8 +104,14 @@ const frame = api.frame = () => {
   const dt = clock.getDelta();
 
   orbit.update(dt) && render();
-  // stats.update();
+  stats.update();
 }
+
+$canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
+  pointer.set(x, y).divide(size).multiplyScalar(2).subScalar(1).multiply(axes);
+  raycaster.setFromCamera(pointer, camera);
+  console.log('???', forms && raycaster.intersectObject(forms));
+});
 
 addEventListener('resize', resize);
 resize();
