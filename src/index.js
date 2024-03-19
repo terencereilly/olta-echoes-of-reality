@@ -4,7 +4,7 @@ import {
     WebGLRenderer, Scene, Raycaster, PerspectiveCamera, Clock,
     Vector2, Vector3, Vector4, Quaternion, Matrix4, Spherical, Box3, Sphere,
     InstancedMesh, IcosahedronGeometry, MeshStandardMaterial,
-    HemisphereLight, PointLight, Color, MathUtils
+    HemisphereLight, PointLight, Color, MathUtils, Fog, DoubleSide
   } from 'three';
 
 // import { Stats } from 'three/addons/libs/stats.module.js';
@@ -24,14 +24,14 @@ const [near, far] = depths;
 // Bounds are for maximum range and accuracy as `olta` only accepts integers.
 const bounds = api.bounds = [-intMax, intMax];
 // Bounds rescaled by this for front-end convenience with `three`.
-const intScale = api.intScale = 1e-13;
+const intScale = api.intScale = 1e-6;
 
 const radii = api.radii = [1, 1e2];
 const [r0, r1] = radii;
 
 const colors = api.colors = {
-  any: [0xff0000, 0x00ff00, 0x0000ff],
-  own: [0xff6666, 0x66ff66, 0x6666ff]
+  any: [0x00bbbb, 0xbb00bb, 0xbbbb00],
+  own: [0x44ffff, 0xff44ff, 0xffff44]
 };
 
 const $body = api.$body = document.body;
@@ -56,9 +56,10 @@ const orbit = api.orbit = new CameraOrbitControls(camera, $canvas);
 camera.position.set(0, 0, lerp(...depths, 0.5));
 camera.lookAt(0, 0, 0);
 
-orbit.minDistance = near;
-orbit.maxDistance = far;
-orbit.infinityDolly = true;
+orbit.infinityDolly = orbit.dollyToCursor = true;
+orbit.dollyTo(orbit.minDistance = orbit.maxDistance = lerp(...depths, 0.2));
+
+scene.fog = new Fog(0x000000, ...depths);
 
 const lightCamera = api.lightCamera = new PointLight(0xffffff);
 
@@ -70,7 +71,10 @@ const lightSky = api.lightSky = new HemisphereLight(0xffffff, 0x000000, 3);
 scene.add(lightSky);
 
 const geometry = api.geometry = new IcosahedronGeometry(1, 3);
-const material = api.material = new MeshStandardMaterial();
+
+const material = api.material =
+  new MeshStandardMaterial({ transparent: true, opacity: 0.5, side: DoubleSide });
+
 const transform = new Matrix4();
 const color = new Color();
 let forms;
@@ -144,7 +148,7 @@ const clearForms = api.clearForms = () =>
 
 const dataToScene = api.dataToScene = (data) => {
   // @todo Construct a KD-Tree, and only create enough meshes for nearby range.
-  const dl = data?.length ?? 0;
+  const dl = data.length;
 
   if(!dl) { return clearForms(); }
   else if((fl ?? 0) < dl) {
@@ -155,10 +159,10 @@ const dataToScene = api.dataToScene = (data) => {
 
   each((d, i) => {
       const { t, r, x, y, z, _creator } = dataToForm(d, 0);
-      const bs = intScale;
+      const s = intScale;
 
       forms.setMatrixAt(i,
-        transform.makeScale(r, r, r).setPosition(x*bs, y*bs, z*bs));
+        transform.makeScale(r, r, r).setPosition(x*s, y*s, z*s));
 
       // @todo Alternate color for forms added by the same creator.
       forms.setColorAt(i,
@@ -232,7 +236,7 @@ const update = api.update = (state) => {
   const to = olta.getAll('forms');
 
   console.log('data', to, state);
-  dataToScene(to);
+  to && dataToScene(to);
   console.log('forms', forms);
 };
 
