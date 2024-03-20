@@ -205,10 +205,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@olta/js-sdk@npm:^0.0.5":
-  version: 0.0.5
-  resolution: "@olta/js-sdk@npm:0.0.5"
-  checksum: ac2f6d9cafbc76e7d5984607add8814c410db91a1cda97ed2fdead427f08cb774f772655434af981343400760c179b9c0a696a6e31866dc94e2d9dc7543754dd
+"@olta/js-sdk@npm:^0.0.10":
+  version: 0.0.10
+  resolution: "@olta/js-sdk@npm:0.0.10"
+  checksum: 2203e03266d86eb8e375e05e9ffb6629405b6fc38d11359790ae672524ae09772f5ca0ea8c3da8055b92e41027bf49e3c50986b643c37041583c6323d4fa7a4a
   languageName: node
   linkType: hard
 
@@ -2831,7 +2831,7 @@ __metadata:
   resolution: "olta-echoes-of-reality@workspace:."
   dependencies:
     "@epok.tech/fn-lists": ^0.1.4
-    "@olta/js-sdk": ^0.0.5
+    "@olta/js-sdk": ^0.0.10
     "@parcel/core": ^2.10.3
     "@parcel/optimizer-data-url": 2.10.3
     "@parcel/packager-raw-url": 2.10.3
@@ -2845,6 +2845,7 @@ __metadata:
     postcss-nesting: ^12.0.1
     postcss-url: ^10.1.3
     three: ^0.162.0
+    three-mesh-bvh: ^0.7.3
     typescript: ^4.9.5
   languageName: unknown
   linkType: soft
@@ -3383,6 +3384,15 @@ __metadata:
   version: 2.2.1
   resolution: "term-size@npm:2.2.1"
   checksum: 1ed981335483babc1e8206f843e06bd2bf89b85f0bf5a9a9d928033a0fcacdba183c03ba7d91814643015543ba002f1339f7112402a21da8f24b6c56b062a5a9
+  languageName: node
+  linkType: hard
+
+"three-mesh-bvh@npm:^0.7.3":
+  version: 0.7.3
+  resolution: "three-mesh-bvh@npm:0.7.3"
+  peerDependencies:
+    three: ">= 0.151.0"
+  checksum: b42ead18108729db90ca37749e2d3e2b5a1e795d84737c727917b78424d392d2b180e2953f94a43fad058c6f1f7a0ea4943cae3f30b39f2bbdd034ab3d0e0775
   languageName: node
   linkType: hard
 
