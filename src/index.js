@@ -283,6 +283,8 @@ $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
     return s0.intersectsSphere(s1);
   });
 
+  // @todo Check hunt first, increase radius if touched, then check flee and
+  //   decrease radius to nearest touch.
   let dr = ((intersect(df))? 1/growth : intersect(dh) && growth);
 
   dr && ((dr = clamp(r*dr, ...radii)) !== r) && hint.scale.setScalar(dr);
