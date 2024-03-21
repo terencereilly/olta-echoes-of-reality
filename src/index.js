@@ -192,6 +192,7 @@ const clearHeld = api.clearHeld = (id) => {
   return t;
 };
 
+// @todo Animate hint color over time.
 $canvas.addEventListener('pointerdown', ({ pointerId: id }) => {
   clearTimeout(held[id]);
 
@@ -290,6 +291,7 @@ $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
   //   decrease radius to nearest touch.
   let dr = ((intersect(df))? 1/growth : intersect(dh) && growth);
 
+  // @todo Animate hint radius over time.
   dr && ((dr = clamp(r*dr, ...radii)) !== r) && hint.scale.setScalar(dr);
 });
 
