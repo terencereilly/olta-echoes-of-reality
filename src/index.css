@@ -6,7 +6,7 @@ html {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  font-family: Inter, sans-serif;
+  font-family: monospace, sans-serif;
   background: #fff;
 }
 
@@ -24,4 +24,25 @@ canvas {
   width: 100%;
   height: 100%;
   cursor: crosshair;
+}
+
+aside {
+  display: flex;
+  flex-flow: row nowrap;
+  gap: 0.2rem;
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  padding: 0.5rem;
+  z-index: 1;
+}
+
+button {
+  background: #000a;
+  color: #fff;
+  border: 1px solid #fffa;
+  padding: 0.5rem;
+  border-radius: 8px;
+  font-family: inherit;
+  cursor: pointer;
 }

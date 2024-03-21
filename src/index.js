@@ -9,9 +9,9 @@ import { Olta } from '@olta/js-sdk';
 import {
     WebGLRenderer, Scene, Raycaster, PerspectiveCamera, Clock,
     Vector2, Vector3, Vector4, Quaternion, Matrix4, Spherical, Box3, Sphere,
-    InstancedMesh, SphereGeometry, CylinderGeometry, MeshStandardMaterial,
+    InstancedMesh, SphereGeometry, CylinderGeometry, MeshToonMaterial,
     HemisphereLight, PointLight, Color, MathUtils, Fog, DoubleSide,
-    BufferGeometry, Mesh
+    BufferGeometry, Mesh, SubtractiveBlending
   } from 'three';
 
 import Stats from 'three/examples/jsm/libs/stats.module.js';
@@ -26,7 +26,7 @@ import { range } from '@epok.tech/fn-lists/range';
 
 const { random, round, floor, max, abs, acos, PI: pi } = Math;
 const { MAX_SAFE_INTEGER: intMax, EPSILON: eps } = Number;
-const { lerp } = MathUtils;
+const { lerp, clamp } = MathUtils;
 
 const api = self.echoes = {};
 
@@ -38,15 +38,16 @@ const [near, far] = depths;
 // Bounds are for maximum range and accuracy as `olta` only accepts integers.
 const bounds = api.bounds = [-intMax, intMax];
 // Bounds rescaled by this for front-end convenience with `three`.
-const intScale = api.intScale = 1e-6;
+const positionScale = api.positionScale = 2e-7;
 
 const radii = api.radii = [1, 1e2];
 const [r0, r1] = radii;
+const growth = 1.5;
 
 const teams = api.teams = 3;
 const team = api.team = floor(random()*teams);
-const chase = (t) => (t+1)%teams;
-const flees = (t) => (t+2)%teams;
+const hunt = (t) => (t+1)%teams;
+const flee = (t) => (t+2)%teams;
 
 const colors = api.colors = {
   any: [0x00bbbb, 0xbb00bb, 0xbbbb00],
@@ -90,6 +91,8 @@ orbit.infinityDolly = orbit.dollyToCursor = true;
 // orbit.infinityDolly = true;
 orbit.minDistance = orbit.maxDistance = r1;
 orbit.setPosition(0, 0, 1e3, false);
+orbit.dollySpeed = 2;
+orbit.truckSpeed = 5;
 orbit.saveState();
 
 scene.fog = new Fog(0xffffff, ...depths);
@@ -105,9 +108,7 @@ scene.add(lightSky);
 
 const forms = api.forms = {
   geometry: new SphereGeometry(1),
-  material: new MeshStandardMaterial(),
-  transform: new Matrix4(),
-  color: new Color(),
+  material: new MeshToonMaterial(),
   data: [],
   meshes: [],
   limits: []
@@ -116,9 +117,9 @@ const forms = api.forms = {
 forms.geometry.computeBoundsTree();
 
 const bvh = forms.geometry.boundsTree;
-const sphere = new Sphere(undefined, 1);
+const spheres = [new Sphere(), new Sphere()];
 
-const hint = api.hint = new Mesh(forms.geometry, new MeshStandardMaterial({
+const hint = api.hint = new Mesh(forms.geometry, new MeshToonMaterial({
   transparent: true, opacity: 0.3, side: DoubleSide, depthWrite: false
 }));
 
@@ -126,14 +127,14 @@ hint.visible = false;
 hint.material.color.setHex(colors.own[team]);
 scene.add(hint);
 
-const hit = api.hit = new Mesh(new CylinderGeometry(0.1, 1, 2, 2**5, 1, true),
-  new MeshStandardMaterial({
-    transparent: true, opacity: 0.5, side: DoubleSide, depthWrite: false
+const hit = api.hit = new Mesh(new CylinderGeometry(0.3, 0.1, 1, 2**5, 1, true),
+  new MeshToonMaterial({
+    transparent: true, opacity: 0.5, side: DoubleSide, depthWrite: false,
+    blending: SubtractiveBlending, fog: false
   }));
 
 hit.visible = false;
-hit.material.color.setHex(0xffffff);
-hit.material.emissive.setHex(0xcccccc);
+hit.geometry.translate(0, 0.5, 0);
 hit.geometry.rotateX(pi*0.5);
 scene.add(hit);
 
@@ -141,6 +142,8 @@ const raycaster = api.raycaster = new Raycaster();
 
 raycaster.firstHitOnly = true;
 
+const transform = new Matrix4();
+const color = new Color();
 const pointer = api.pointer = new Vector2();
 const axes = api.axes = new Vector2(1, -1);
 
@@ -150,7 +153,8 @@ $body.appendChild(stats.dom);
 let needRender = false;
 
 const render = api.render = () => {
-  console.log('render', renderer.render(scene, camera));
+  // console.log('render');
+  renderer.render(scene, camera);
   needRender = false;
 };
 
@@ -173,6 +177,56 @@ const frame = api.frame = () => {
   stats.update();
 }
 
+const held = {};
+const hold = 1e3;
+
+const clearHeld = api.clearHeld = (id) => {
+  const t = held[id];
+
+  clearTimeout(t);
+  delete held[id];
+
+  return t;
+};
+
+$canvas.addEventListener('pointerdown', ({ pointerId: id }) => {
+  clearTimeout(held[id]);
+
+  held[id] = setTimeout(() => {
+      if(!clearHeld(id)) { return; }
+
+      const { visible: hv, scale: hs, position: hp } = hint;
+
+      if(!hv) { return; }
+
+      const { x, y, z } = hp;
+      const ps = positionScale;
+
+      // @todo Check `state` settings to use dynamically, for limits etc?
+      const to = {
+        t: team,
+        r: round(clamp(hs.x, ...radii)),
+        x: round(clamp(x/ps, ...bounds)),
+        y: round(clamp(y/ps, ...bounds)),
+        z: round(clamp(z/ps, ...bounds))
+      };
+
+      console.log('create', to);
+      olta.create('forms', to);
+      hint.visible = false;
+      needRender = true;
+    },
+    hold);
+});
+
+const lift = (e) => clearHeld(e.pointerId);
+
+$canvas.addEventListener('pointermove', lift);
+$canvas.addEventListener('pointerup', lift);
+$canvas.addEventListener('pointercancel', lift);
+$canvas.addEventListener('pointerout', lift);
+$canvas.addEventListener('pointerleave', lift);
+
 $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
   const { meshes, data } = forms;
   const to = meshes[team];
@@ -184,6 +238,7 @@ $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
   pointer.set(x, y).divide(size).multiplyScalar(2).subScalar(1).multiply(axes);
   raycaster.setFromCamera(pointer, camera);
 
+  // @todo BVH is unnecessary, just use `ray.intersectsSphere` instead.
   const [at] = raycaster.intersectObjects(meshes);
 
   if(!at) { return hit.visible = hint.visible = false; }
@@ -193,27 +248,44 @@ $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
   const form = data[t][i];
   const { r } = form;
 
-  console.log('hit', at, p, mesh, form);
+  // console.log('hit', at, p, mesh, form);
   hit.visible = true;
   hit.position.copy(p);
   hit.scale.setScalar(r*0.2);
+  hit.material.color.setHex(colors.any[t]);
   hit.lookAt(p.add(n));
 
   if(t !== team) { return hint.visible = false; }
 
-  console.log('hint');
+  // console.log('hint');
   hint.visible = true;
   hint.position.copy(p);
   // Starting radius.
   hint.scale.setScalar(r);
 
-  // Check the other team forms with `intersectSphere`, increase radius if
-  // touching a team to chase, decrease if touching a team this flees (always).
-  const { [chase(team)]: mc, [flees(team)]: mf } = meshes;
+  // Check the other team forms with `intersectSphere`:
+  // - Decrease radius if touching a team to flee.
+  // - Increase radius if touching a team to hunt.
+  const tf = flee(team);
+  const th = hunt(team);
+  const { [tf]: mf, [th]: mh } = meshes;
+  const { [tf]: df, [th]: dh } = data;
+  const [s0, s1] = spheres;
+  const ps = positionScale;
 
-  // sphere.applyMatrix4();
+  s0.center.copy(p);
+  s0.radius = r;
 
-  // const  = bvh.intersectsSphere(sphere);
+  const intersect = (d) => d.some(({ x, y, z, r }, i) => {
+    s1.center.set(x*ps, y*ps, z*ps);
+    s1.radius = r;
+
+    return s0.intersectsSphere(s1);
+  });
+
+  let dr = ((intersect(df))? 1/growth : intersect(dh) && growth);
+
+  dr && ((dr = clamp(r*dr, ...radii)) !== r) && hint.scale.setScalar(dr);
 });
 
 // @todo Find a way to sensibly set the camera to orbit around the intersection.
@@ -237,7 +309,7 @@ const olta = api.olta = Olta();
 const dataToScene = api.dataToScene = (to) => {
   // @todo Construct a KD-Tree, and only create enough meshes for nearby range.
   const tl = to.length;
-  const { geometry, material, transform, color, data, meshes, limits } = forms;
+  const { geometry, material, data, meshes, limits } = forms;
 
   if(!tl) {
     each((m) => m.removeFromParent().dispose(), meshes);
@@ -263,11 +335,11 @@ const dataToScene = api.dataToScene = (to) => {
       else { m.count = dl; }
 
       // Set up the mesh instances.
-      const s = intScale;
+      const ps = positionScale;
 
       each(({ r, x, y, z, _creator }, i) => {
           m.setMatrixAt(i,
-            transform.makeScale(r, r, r).setPosition(x*s, y*s, z*s));
+            transform.makeScale(r, r, r).setPosition(x*ps, y*ps, z*ps));
 
           // @todo Alternate color for forms added by the same creator.
           m.setColorAt(i,
@@ -280,7 +352,7 @@ const dataToScene = api.dataToScene = (to) => {
     data);
 
   needRender = true;
-  console.log('forms', forms);
+  // console.log('forms', forms);
 };
 
 const update = api.update = (state) => {
@@ -296,13 +368,5 @@ const update = api.update = (state) => {
 
 olta.onUpdate(update);
 
-// document.body.addEventListener('click', () =>
-//   // @todo Check `state` settings to use dynamically, for limits etc?
-//   olta.create('forms', {
-//       t: round(random()*colors.any.length),
-//       r: round(lerp(...radii, random())),
-//       x: round(lerp(...bounds, random())),
-//       y: round(lerp(...bounds, random())),
-//       z: round(lerp(...bounds, random()))
-//     },
-//     0));
+each(($b) => $b.addEventListener('click', () => orbit.reset(true)),
+  document.querySelectorAll('.recenter'));
