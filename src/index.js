@@ -93,8 +93,8 @@ orbit.infinityDolly = orbit.dollyToCursor = true;
 // orbit.infinityDolly = true;
 orbit.minDistance = orbit.maxDistance = r1;
 orbit.setPosition(0, 0, 1e3, false);
-orbit.dollySpeed = 2;
-orbit.truckSpeed = 5;
+orbit.dollySpeed = 10;
+orbit.truckSpeed = 10;
 orbit.saveState();
 
 scene.fog = new Fog(0xffffff, ...depths);

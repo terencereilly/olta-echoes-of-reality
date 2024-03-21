@@ -5,7 +5,7 @@
 - Details
   - Title: `echoes-of-reality-pilot`
   - Description: ``
-  - Content Url: `http://epok.tech/olta-echoes-of-reality/`
+  - Content Url: `https://epok.tech/olta-echoes-of-reality/`
   - Credits
     1.
       - Name: `epok.tech`
