@@ -11,7 +11,7 @@ import {
     Vector2, Vector3, Vector4, Quaternion, Matrix4, Spherical, Box3, Sphere,
     InstancedMesh, SphereGeometry, CylinderGeometry, MeshToonMaterial,
     HemisphereLight, PointLight, Color, MathUtils, Fog, DoubleSide,
-    BufferGeometry, Mesh, SubtractiveBlending
+    BufferGeometry, Mesh
   } from 'three';
 
 import Stats from 'three/examples/jsm/libs/stats.module.js';
@@ -40,7 +40,7 @@ const [near, far] = depths;
 // Bounds are for maximum range and accuracy as `olta` only accepts integers.
 const bounds = api.bounds = [-intMax, intMax];
 // Bounds rescaled by this for front-end convenience with `three`.
-const positionScale = api.positionScale = 8e-13;
+const positionScale = api.positionScale = 3e-13;
 
 const radii = api.radii = [1, 1e2];
 const [r0, r1] = radii;
@@ -85,15 +85,14 @@ const clock = api.clock = new Clock();
 const camera = api.camera = new PerspectiveCamera(60, 1, ...depths);
 
 // camera.position.set(0, 0, eps);
-camera.position.set(0, 0, 1e-5);
+// camera.position.set(0, 0, 1e-5);
+camera.position.set(0, 0, r0);
 
 const orbit = api.orbit = new CameraOrbitControls(camera, $canvas);
 
 orbit.infinityDolly = orbit.dollyToCursor = true;
-// orbit.infinityDolly = true;
-orbit.minDistance = orbit.maxDistance = r1;
-orbit.setPosition(0, 0, 1e3, false);
-orbit.dollySpeed = 10;
+orbit.dollyTo(orbit.minDistance = orbit.maxDistance = r1, true);
+orbit.dollySpeed = 3;
 orbit.truckSpeed = 10;
 orbit.saveState();
 
@@ -122,17 +121,17 @@ const bvh = forms.geometry.boundsTree;
 const spheres = [new Sphere(), new Sphere()];
 
 const hint = api.hint = new Mesh(forms.geometry, new MeshToonMaterial({
-  transparent: true, opacity: 0.3, side: DoubleSide, depthWrite: false
+  transparent: true, opacity: 0.3, side: DoubleSide, depthWrite: false,
+  color: colors.own[team]
 }));
 
 hint.visible = false;
-hint.material.color.setHex(colors.own[team]);
 scene.add(hint);
 
-const hit = api.hit = new Mesh(new CylinderGeometry(0.3, 0.1, 1, 2**5, 1, true),
+const hit = api.hit = new Mesh(new CylinderGeometry(0.1, 0.5, 1, 2**5, 1, true),
   new MeshToonMaterial({
     transparent: true, opacity: 0.5, side: DoubleSide, depthWrite: false,
-    blending: SubtractiveBlending, fog: false
+    color: colors.own[team], fog: false
   }));
 
 hit.visible = false;
@@ -256,8 +255,8 @@ $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
   hit.visible = true;
   hit.position.copy(p);
   hit.scale.setScalar(r*0.2);
-  hit.material.color.setHex(colors.any[t]);
   hit.lookAt(p.add(n));
+  hit.material.color.setHex((t === team)? 0x000000 : colors.own[team]);
 
   if(t !== team) { return hint.visible = false; }
 
