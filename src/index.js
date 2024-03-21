@@ -40,7 +40,7 @@ const [near, far] = depths;
 // Bounds are for maximum range and accuracy as `olta` only accepts integers.
 const bounds = api.bounds = [-intMax, intMax];
 // Bounds rescaled by this for front-end convenience with `three`.
-const positionScale = api.positionScale = 2e-7;
+const positionScale = api.positionScale = 8e-13;
 
 const radii = api.radii = [1, 1e2];
 const [r0, r1] = radii;
