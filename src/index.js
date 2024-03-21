@@ -30,6 +30,8 @@ const { lerp, clamp } = MathUtils;
 
 const api = self.echoes = {};
 
+const query = api.query = new URLSearchParams(location.search);
+
 let wallet;
 
 const depths = api.depths = [1, 1e4];
@@ -147,8 +149,9 @@ const color = new Color();
 const pointer = api.pointer = new Vector2();
 const axes = api.axes = new Vector2(1, -1);
 
-stats = api.stats = new Stats();
-$body.appendChild(stats.dom);
+const stats = api.stats = ((query.has('stats'))? new Stats() : null);
+
+stats && $body.appendChild(stats.dom);
 
 let needRender = false;
 
@@ -174,7 +177,7 @@ const frame = api.frame = () => {
   const dt = clock.getDelta();
 
   (orbit.update(dt) || needRender) && render();
-  stats.update();
+  stats?.update?.();
 }
 
 const held = {};
