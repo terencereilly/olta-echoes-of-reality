@@ -1,4 +1,17 @@
 /**
+ * @todo Address Terrence's Figma notes.
+ * @todo Icons to explain `hunt`, `team`, `flee` interaction.
+ * @todo Style updates according to Terrence's mood, colour, post references.
+ * @todo Maybe add sphere BVH to optimise later.
+ * @todo Grow proportionally with crossover of `hunt` forms.
+ * @todo Last contribution trace/s until replaced by new form.
+ * @todo Animations: hint radius, hint colour filling, trace colour pulse.
+ * @todo Replay time: add shapes in sequence (by `_sortKey` or `_id`?),
+ *   on intro or idle.
+ * @todo Offset touch target to above fingertip so it's visible.
+ * @todo Distinct touch interactions for moving target versus camera.
+ * @todo Make camera move more consistently, especially dolly out...
+ *
  * @todo Use collision detection and spatial partition to constrain forms from
  *   interpenetration while altering radius... but it's tricky, for now just
  *   allow interpenetration and try balance things with the growth/shrink rates.
@@ -22,9 +35,10 @@ import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast }
 
 import { each } from '@epok.tech/fn-lists/each';
 import { map } from '@epok.tech/fn-lists/map';
+import { reduce } from '@epok.tech/fn-lists/reduce';
 import { range } from '@epok.tech/fn-lists/range';
 
-const { random, round, floor, max, abs, acos, PI: pi } = Math;
+const { random, round, floor, min, max, abs, acos, PI: pi } = Math;
 const { MAX_SAFE_INTEGER: intMax, EPSILON: eps } = Number;
 const { lerp, clamp } = MathUtils;
 
@@ -44,15 +58,19 @@ const positionScale = api.positionScale = 3e-13;
 
 const radii = api.radii = [1, 1e2];
 const [r0, r1] = radii;
-const growth = 1.5;
+const growth = 1.3;
+
+const boundRadius = (intMax*positionScale)+r1;
 
 const teams = api.teams = 3;
-const team = api.team = floor(random()*teams);
+const team = api.team = parseInt(query.get('team') || floor(random()*teams));
 const hunt = (t) => (t+1)%teams;
 const flee = (t) => (t+2)%teams;
 
 const colors = api.colors = {
-  any: [0x00bbbb, 0xbb00bb, 0xbbbb00],
+  // any: [0x00bbbb, 0xbb00bb, 0xbbbb00],
+  // own: [0x44ffff, 0xff44ff, 0xffff44]
+  any: [0x3033d4, 0xb02940, 0xefa53b],
   own: [0x44ffff, 0xff44ff, 0xffff44]
 };
 
@@ -61,7 +79,7 @@ const $canvas = api.$canvas = document.querySelector('canvas');
 
 const size = new Vector2();
 
-// @todo Use a simpler sphere intersection test instead.
+// BVH is only maybe used by `orbit`, `forms` use sphere intersection instead.
 BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 Mesh.prototype.raycast = acceleratedRaycast;
@@ -83,22 +101,19 @@ const scene = api.scene = new Scene();
 const clock = api.clock = new Clock();
 
 const camera = api.camera = new PerspectiveCamera(60, 1, ...depths);
-
-// camera.position.set(0, 0, eps);
-// camera.position.set(0, 0, 1e-5);
-camera.position.set(0, 0, r0);
-
 const orbit = api.orbit = new CameraOrbitControls(camera, $canvas);
+const orbitStart = boundRadius*2;
 
 orbit.infinityDolly = orbit.dollyToCursor = true;
-orbit.dollyTo(orbit.minDistance = orbit.maxDistance = r1, true);
+orbit.minDistance = orbit.maxDistance = r1;
 orbit.dollySpeed = 3;
 orbit.truckSpeed = 10;
+orbit.setLookAt(0, 0, orbitStart+orbit.minDistance, 0, 0, orbitStart, true);
 orbit.saveState();
 
 scene.fog = new Fog(0xffffff, ...depths);
 
-const lightCamera = api.lightCamera = new PointLight(0xffffff, 1e5);
+const lightCamera = api.lightCamera = new PointLight(0xffffff, 3e5);
 
 lightCamera.position.set(0, r1, -r1);
 scene.add(camera.add(lightCamera));
@@ -110,15 +125,20 @@ scene.add(lightSky);
 const forms = api.forms = {
   geometry: new SphereGeometry(1),
   material: new MeshToonMaterial(),
-  data: [],
-  meshes: [],
-  limits: []
+  data: [], meshes: [], limits: []
 };
 
 forms.geometry.computeBoundsTree();
 
-const bvh = forms.geometry.boundsTree;
 const spheres = [new Sphere(), new Sphere()];
+const vector3s = [new Vector3(), new Vector3(), new Vector3()];
+
+function dataToSphere({ x, y, z, r }, s) {
+  s.center.set(x, y, z).multiplyScalar(positionScale);
+  s.radius = r;
+
+  return s;
+}
 
 const hint = api.hint = new Mesh(forms.geometry, new MeshToonMaterial({
   transparent: true, opacity: 0.3, side: DoubleSide, depthWrite: false,
@@ -231,67 +251,75 @@ $canvas.addEventListener('pointerout', lift);
 $canvas.addEventListener('pointerleave', lift);
 
 $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
-  const { meshes, data } = forms;
-  const to = meshes[team];
+  const { data } = forms;
 
   needRender = true;
 
-  if(!to) { return hit.visible = hint.visible = false; }
+  if(!data?.length) { return hit.visible = hint.visible = false; }
 
   pointer.set(x, y).divide(size).multiplyScalar(2).subScalar(1).multiply(axes);
   raycaster.setFromCamera(pointer, camera);
 
-  // @todo BVH is unnecessary, just use `ray.intersectsSphere` instead.
-  const [at] = raycaster.intersectObjects(meshes);
-
-  if(!at) { return hit.visible = hint.visible = false; }
-
-  const { object: mesh, instanceId: i, point: p, normal: n } = at;
-  const t = meshes.indexOf(mesh);
-  const form = data[t][i];
-  const { r } = form;
-
-  // console.log('hit', at, p, mesh, form);
-  hit.visible = true;
-  hit.position.copy(p);
-  hit.scale.setScalar(r*0.2);
-  hit.lookAt(p.add(n));
-  hit.material.color.setHex((t === team)? 0x000000 : colors.own[team]);
-
-  if(t !== team) { return hint.visible = false; }
-
-  // console.log('hint');
-  hint.visible = true;
-  hint.position.copy(p);
-  // Starting radius.
-  hint.scale.setScalar(r);
-
-  // Check the other team forms with `intersectSphere`:
-  // - Decrease radius if touching a team to flee.
-  // - Increase radius if touching a team to hunt.
-  const tf = flee(team);
-  const th = hunt(team);
-  const { [tf]: mf, [th]: mh } = meshes;
-  const { [tf]: df, [th]: dh } = data;
+  const { ray, ray: { origin: ro } } = raycaster;
   const [s0, s1] = spheres;
-  const ps = positionScale;
+  const [p, v, c] = vector3s;
+  let at;
+
+  const l2 = reduce((l2, ds) =>
+      reduce((l2, d) => {
+        if(!ray.intersectSphere(dataToSphere(d, s0), v)) { return l2; }
+
+        const vl2 = v.distanceToSquared(ro);
+
+        if(l2 < vl2) { return l2; }
+
+        at = d;
+        p.copy(v);
+        c.copy(s0.center);
+
+        return vl2;
+      },
+      ds, l2),
+    data, Infinity);
+
+  if(l2 === Infinity) { return hit.visible = hint.visible = false; }
+
+  const { t } = at;
+  let { r } = at;
+
+  hit.lookAt(v.copy(hit.position.copy(p)).add(p).sub(c));
+  hit.visible = true;
+
+  if(t === team) { hit.material.color.setHex(0x000000); }
+  else {
+    hit.material.color.setHex(colors.own[team]);
+    hit.scale.setScalar(r*0.2);
+
+    return hint.visible = false;
+  }
+
+  // Check the other team forms intersected:
+  // - Increase radius if touching a team to `hunt`.
+  // - Decrease radius to avoid touching a team to `flee`.
+  const { [hunt(team)]: dh, [flee(team)]: df } = data;
 
   s0.center.copy(p);
   s0.radius = r;
 
-  const intersect = (d) => d.some(({ x, y, z, r }, i) => {
-    s1.center.set(x*ps, y*ps, z*ps);
-    s1.radius = r;
-
-    return s0.intersectsSphere(s1);
-  });
-
-  // @todo Check hunt first, increase radius if touched, then check flee and
-  //   decrease radius to nearest touch.
-  let dr = ((intersect(df))? 1/growth : intersect(dh) && growth);
+  // Check `hunt` first, increase radius if touched, then check `flee` and
+  // decrease radius to nearest touch.
+  // @todo Grow proportionally to how much of the `hunt` form is covered?
+  // @todo Optimise using squared-distance comparisons.
+  r = reduce((r, d) => min(r, dataToSphere(d, s1).distanceToPoint(p)), df,
+    ((dh.some((d) => dataToSphere(d, s1).intersectsSphere(s0)))? r*growth : r));
 
   // @todo Animate hint radius over time.
-  dr && ((dr = clamp(r*dr, ...radii)) !== r) && hint.scale.setScalar(dr);
+  if(r < r0) { return hint.visible = false; }
+
+  hint.scale.setScalar(min(r, r1));
+  hint.position.copy(p);
+  hint.visible = true;
+  hit.scale.setScalar(r*0.2);
 });
 
 // @todo Find a way to sensibly set the camera to orbit around the intersection.
@@ -323,8 +351,11 @@ const dataToScene = api.dataToScene = (to) => {
     return data.length = limits.length = meshes.length = 0;
   }
 
+  map(() => [],
+    ((data.length)? data : ((data.length = teams) && range(data))), 0);
+
   // Group data by team.
-  each((v) => (data[v.t] ??= []).push(v), to);
+  each((v) => data[v.t].push(v), to);
 
   each((d, t) => {
       const dl = d.length;
@@ -369,7 +400,7 @@ const update = api.update = (state) => {
   if(!to) { return; }
 
   dataToScene(to);
-  wallet = state.activeWalletAddress;
+  console.log('wallet', wallet = state.projectState.activeWalletAddress);
 };
 
 olta.onUpdate(update);
