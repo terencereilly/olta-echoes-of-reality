@@ -1,7 +1,5 @@
 /**
  * @todo Address Terrence's Figma notes.
- * @todo Grow proportionally with crossover of `hunt` forms.
- * @todo Last contribution trace/s until replaced by new form.
  * @todo Animations: hint radius, hint colour filling, trace colour pulse.
  * @todo Replay time: add shapes in sequence (by `_sortKey` or `_id`?),
  *   on intro or idle.
@@ -23,7 +21,7 @@ import {
     Vector2, Vector3, Vector4, Quaternion, Matrix4, Spherical, Box3, Sphere,
     InstancedMesh, SphereGeometry, CylinderGeometry, MeshToonMaterial,
     HemisphereLight, PointLight, Color, MathUtils, Fog, DoubleSide,
-    BufferGeometry, Mesh
+    BufferGeometry, Mesh, Group
   } from 'three';
 
 import Stats from 'three/examples/jsm/libs/stats.module.js';
@@ -58,8 +56,9 @@ const positionScale = api.positionScale = 3e-13;
 const radii = api.radii = [1, 1e2];
 const [r0, r1] = radii;
 
-const shrink = 0.9;
 const growth = 1.5;
+const shrink = 0.9;
+const inner = 0.95;
 
 const boundRadius = (intMax*positionScale)+r1;
 
@@ -114,7 +113,7 @@ orbit.saveState();
 
 scene.fog = new Fog(0xffffff, ...depths);
 
-const lightCamera = api.lightCamera = new PointLight(0xffffff, 3e5);
+const lightCamera = api.lightCamera = new PointLight(0xffffff, 1e5);
 
 lightCamera.position.set(0, r1, -r1);
 scene.add(camera.add(lightCamera));
@@ -131,7 +130,7 @@ const forms = api.forms = {
 
 forms.geometry.computeBoundsTree();
 
-const spheres = [new Sphere(), new Sphere()];
+const spheres = [new Sphere()];
 const vector3s = [new Vector3(), new Vector3(), new Vector3()];
 
 function dataToSphere({ x, y, z, r }, s) {
@@ -159,6 +158,26 @@ hit.visible = false;
 hit.geometry.translate(0, 0.5, 0);
 hit.geometry.rotateX(pi*0.5);
 scene.add(hit);
+
+const traces = new Group();
+
+const traceMaterial = new MeshToonMaterial({
+  transparent: true, opacity: 0.7, side: DoubleSide, depthWrite: false,
+  color: colors.own[team], fog: false
+});
+
+function toTrace(x, y, z, r) {
+  const t = new Mesh(forms.geometry, traceMaterial);
+  const { position: p, scale: s } = t;
+
+  p.set(x, y, z);
+  s.multiplyScalar(r*inner);
+  traces.add(t);
+
+  return t;
+}
+
+scene.add(traces);
 
 const raycaster = api.raycaster = new Raycaster();
 
@@ -224,19 +243,21 @@ $canvas.addEventListener('pointerdown', ({ pointerId: id }) => {
       if(!hv) { return; }
 
       const { x, y, z } = hp;
+      const r = hs.x;
       const ps = positionScale;
 
       // @todo Check `state` settings to use dynamically, for limits etc?
       const to = {
         t: team,
-        r: round(clamp(hs.x, ...radii)),
         x: round(clamp(x/ps, ...bounds)),
         y: round(clamp(y/ps, ...bounds)),
-        z: round(clamp(z/ps, ...bounds))
+        z: round(clamp(z/ps, ...bounds)),
+        r: round(clamp(r, ...radii))
       };
 
       console.log('create', to);
       olta.create('forms', to);
+      toTrace(x, y, z, r);
       hint.visible = false;
       needRender = true;
     },
@@ -262,13 +283,13 @@ $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
   raycaster.setFromCamera(pointer, camera);
 
   const { ray, ray: { origin: ro } } = raycaster;
-  const [s0, s1] = spheres;
+  const [s] = spheres;
   const [p, v, c] = vector3s;
   let at;
 
   const l2 = reduce((l2, ds) =>
       reduce((l2, d) => {
-        if(!ray.intersectSphere(dataToSphere(d, s0), v)) { return l2; }
+        if(!ray.intersectSphere(dataToSphere(d, s), v)) { return l2; }
 
         const vl2 = v.distanceToSquared(ro);
 
@@ -276,7 +297,7 @@ $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
 
         at = d;
         p.copy(v);
-        c.copy(s0.center);
+        c.copy(s.center);
 
         return vl2;
       },
@@ -286,16 +307,15 @@ $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
   if(l2 === Infinity) { return hit.visible = hint.visible = false; }
 
   const { t } = at;
-  let { r } = at;
+  const ar = at.r;
 
-  r *= shrink;
   hit.lookAt(v.copy(hit.position.copy(p)).add(p).sub(c));
   hit.visible = true;
 
   if(t === team) { hit.material.color.setHex(0x000000); }
   else {
     hit.material.color.setHex(colors.own[team]);
-    hit.scale.setScalar(r*0.2);
+    hit.scale.setScalar(ar*0.2);
 
     return hint.visible = false;
   }
@@ -304,30 +324,31 @@ $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
   // - Increase radius if touching a team to `hunt`.
   // - Decrease radius to avoid touching a team to `flee`.
   const { [hunt(team)]: dh, [flee(team)]: df } = data;
-
-  s0.center.copy(p);
-  s0.radius = r;
+  let r = ar;
 
   // Check `hunt` first, increase radius if touched, proportional to how much of
   // each form (radius) is crossed.
   // @todo Optimise using squared-distance comparisons.
   r *= lerp(1, growth,
     clamp(reduce((to, d) =>
-          to+(clamp((r-dataToSphere(d, s1).distanceToPoint(p))/r, 0, 1)),
+          to+(clamp((r-dataToSphere(d, s).distanceToPoint(p))/r, 0, 1)),
         dh, 0),
       0, 1));
 
   // Check `flee` and decrease radius to nearest touch.
   // @todo Optimise using squared-distance comparisons.
-  r = reduce((to, d) => min(to, dataToSphere(d, s1).distanceToPoint(p)), df, r);
+  r = reduce((to, d) => min(to, dataToSphere(d, s).distanceToPoint(p)), df, r);
 
   // @todo Animate hint radius over time.
   if(r < r0) { return hint.visible = false; }
 
-  hint.scale.setScalar(min(r, r1));
+  hint.scale.setScalar(min(r*shrink, r1));
   hint.position.copy(p);
   hint.visible = true;
   hit.scale.setScalar(r*0.2);
+
+  // @todo Interpolate colour to mix towards `hunt` (if `r > ar`) or
+  // `flee` (if `r < ar`), then animate back to its normal colour.
 });
 
 // @todo Find a way to sensibly set the camera to orbit around the intersection.
@@ -382,7 +403,7 @@ const dataToScene = api.dataToScene = (to) => {
       // Set up the mesh instances.
       const ps = positionScale;
 
-      each(({ r, x, y, z, _creator }, i) => {
+      each(({ x, y, z, r, _creator }, i) => {
           m.setMatrixAt(i,
             transform.makeScale(r, r, r).setPosition(x*ps, y*ps, z*ps));
 
