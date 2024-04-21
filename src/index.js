@@ -1,8 +1,5 @@
 /**
  * @todo Address Terrence's Figma notes.
- * @todo Icons to explain `hunt`, `team`, `flee` interaction.
- * @todo Style updates according to Terrence's mood, colour, post references.
- * @todo Maybe add sphere BVH to optimise later.
  * @todo Grow proportionally with crossover of `hunt` forms.
  * @todo Last contribution trace/s until replaced by new form.
  * @todo Animations: hint radius, hint colour filling, trace colour pulse.
@@ -11,7 +8,9 @@
  * @todo Offset touch target to above fingertip so it's visible.
  * @todo Distinct touch interactions for moving target versus camera.
  * @todo Make camera move more consistently, especially dolly out...
- *
+ * @todo Icons to explain `hunt`, `team`, `flee` interaction.
+ * @todo Style updates according to Terrence's mood, colour, post references.
+ * @todo Maybe add sphere BVH to optimise later.
  * @todo Use collision detection and spatial partition to constrain forms from
  *   interpenetration while altering radius... but it's tricky, for now just
  *   allow interpenetration and try balance things with the growth/shrink rates.
@@ -58,7 +57,9 @@ const positionScale = api.positionScale = 3e-13;
 
 const radii = api.radii = [1, 1e2];
 const [r0, r1] = radii;
-const growth = 1.3;
+
+const shrink = 0.9;
+const growth = 1.5;
 
 const boundRadius = (intMax*positionScale)+r1;
 
@@ -287,6 +288,7 @@ $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
   const { t } = at;
   let { r } = at;
 
+  r *= shrink;
   hit.lookAt(v.copy(hit.position.copy(p)).add(p).sub(c));
   hit.visible = true;
 
@@ -306,12 +308,18 @@ $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
   s0.center.copy(p);
   s0.radius = r;
 
-  // Check `hunt` first, increase radius if touched, then check `flee` and
-  // decrease radius to nearest touch.
-  // @todo Grow proportionally to how much of the `hunt` form is covered?
+  // Check `hunt` first, increase radius if touched, proportional to how much of
+  // each form (radius) is crossed.
   // @todo Optimise using squared-distance comparisons.
-  r = reduce((r, d) => min(r, dataToSphere(d, s1).distanceToPoint(p)), df,
-    ((dh.some((d) => dataToSphere(d, s1).intersectsSphere(s0)))? r*growth : r));
+  r *= lerp(1, growth,
+    clamp(reduce((to, d) =>
+          to+(clamp((r-dataToSphere(d, s1).distanceToPoint(p))/r, 0, 1)),
+        dh, 0),
+      0, 1));
+
+  // Check `flee` and decrease radius to nearest touch.
+  // @todo Optimise using squared-distance comparisons.
+  r = reduce((to, d) => min(to, dataToSphere(d, s1).distanceToPoint(p)), df, r);
 
   // @todo Animate hint radius over time.
   if(r < r0) { return hint.visible = false; }
@@ -405,5 +413,9 @@ const update = api.update = (state) => {
 
 olta.onUpdate(update);
 
-each(($b) => $b.addEventListener('click', () => orbit.reset(true)),
+each(($b) => $b.addEventListener('click', () => {
+    orbit.reset(true);
+    // Doesn't seem to work with the above reset.
+    orbit.setLookAt(0, 0, orbitStart+orbit.minDistance, 0, 0, orbitStart, true);
+  }),
   document.querySelectorAll('.recenter'));
