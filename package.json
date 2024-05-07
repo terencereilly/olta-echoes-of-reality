@@ -12,8 +12,8 @@
   },
   "scripts": {
     "start": "yarn dist:fresh",
-    "dev": "yarn dev:parcel & yarn dev:arweave",
-    "dev:fresh": "yarn dev:parcel:fresh & yarn dev:arweave",
+    "dev": "yarn dev:parcel",
+    "dev:fresh": "yarn dev:parcel:fresh",
     "dev:parcel": "parcel --target app --log-level verbose",
     "dev:parcel:fresh": "yarn dev:parcel --no-cache",
     "dev:arweave": "npx --yes arlocal",
@@ -25,7 +25,7 @@
     "clean:dev": "rm -rf ./dist/",
     "clean:build": "rm -rf ./docs/",
     "clean:parcel": "rm -rf ./.parcel-cache",
-    "setup": "setup:ide && setup:tsc",
+    "setup": "yarn setup:ide && yarn setup:tsc",
     "setup:ide": "yarn dlx @yarnpkg/sdks",
     "setup:tsc": "yarn tsc"
   },

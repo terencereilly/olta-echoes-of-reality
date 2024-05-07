@@ -1,6 +1,6 @@
 /**
  * @todo Address Terrence's Figma notes.
- * @todo Animations: hint radius, hint colour filling, trace colour pulse.
+ * @todo Animations: hint radius.
  * @todo Replay time: add shapes in sequence (by `_sortKey` or `_id`?),
  *   on intro or idle.
  * @todo Offset touch target to above fingertip so it's visible.
@@ -21,7 +21,9 @@ import {
     Vector2, Vector3, Vector4, Quaternion, Matrix4, Spherical, Box3, Sphere,
     InstancedMesh, SphereGeometry, CylinderGeometry, MeshToonMaterial,
     HemisphereLight, PointLight, Color, MathUtils, Fog, DoubleSide,
-    BufferGeometry, Mesh, Group
+    BufferGeometry, Mesh, Group, TextureLoader, NearestFilter,
+    NumberKeyframeTrack, VectorKeyframeTrack,
+    AnimationClip, AnimationMixer, InterpolateSmooth, LoopOnce
   } from 'three';
 
 import Stats from 'three/examples/jsm/libs/stats.module.js';
@@ -34,6 +36,8 @@ import { each } from '@epok.tech/fn-lists/each';
 import { map } from '@epok.tech/fn-lists/map';
 import { reduce } from '@epok.tech/fn-lists/reduce';
 import { range } from '@epok.tech/fn-lists/range';
+
+const gradientMapURL = new URL('assets/tone-5.jpg', import.meta.url);
 
 const { random, round, floor, min, max, abs, acos, PI: pi } = Math;
 const { MAX_SAFE_INTEGER: intMax, EPSILON: eps } = Number;
@@ -56,11 +60,11 @@ const positionScale = api.positionScale = 3e-13;
 const radii = api.radii = [1, 1e2];
 const [r0, r1] = radii;
 
+const boundRadius = (intMax*positionScale)+r1;
+
 const growth = 1.5;
 const shrink = 0.9;
 const inner = 0.95;
-
-const boundRadius = (intMax*positionScale)+r1;
 
 const teams = api.teams = 3;
 const team = api.team = parseInt(query.get('team') || floor(random()*teams));
@@ -115,16 +119,21 @@ scene.fog = new Fog(0xffffff, ...depths);
 
 const lightCamera = api.lightCamera = new PointLight(0xffffff, 1e5);
 
-lightCamera.position.set(0, r1, -r1);
+lightCamera.position.set(0, r1, 0);
 scene.add(camera.add(lightCamera));
 
 const lightSky = api.lightSky = new HemisphereLight(0xffffff, 0x000000, 0.5);
 
 scene.add(lightSky);
 
+const textureLoader = new TextureLoader();
+const gradientMap = textureLoader.load(gradientMapURL);
+
+gradientMap.minFilter = gradientMap.magFilter = NearestFilter;
+
 const forms = api.forms = {
   geometry: new SphereGeometry(1),
-  material: new MeshToonMaterial(),
+  material: new MeshToonMaterial({ gradientMap }),
   data: [], meshes: [], limits: []
 };
 
@@ -142,16 +151,41 @@ function dataToSphere({ x, y, z, r }, s) {
 
 const hint = api.hint = new Mesh(forms.geometry, new MeshToonMaterial({
   transparent: true, opacity: 0.3, side: DoubleSide, depthWrite: false,
-  color: colors.own[team]
+  color: colors.own[team], gradientMap
 }));
 
 hint.visible = false;
-scene.add(hint);
+
+const hold = api.hold = {
+  mesh: new Mesh(hint.geometry, hint.material.clone()),
+  frames: {}, wait: 1e3
+};
+
+scene.add(hint.add(hold.mesh));
+
+(() => {
+  const { mesh, frames, wait } = hold;
+  const mixer = hold.mixer = new AnimationMixer(mesh);
+  const { material, scale } = mesh;
+  const o1 = material.opacity;
+  const times = [0, wait*1e-3];
+
+  const fo = frames.opacity = new NumberKeyframeTrack('.material.opacity',
+    times, [1, o1], InterpolateSmooth);
+
+  const fs = frames.scale = new VectorKeyframeTrack('.scale',
+    times, scale.toArray(range(6, eps), 3), InterpolateSmooth);
+
+  const clip = hold.clip = new AnimationClip('@', -1, [fs, fo]);
+  const action = hold.action = mixer.clipAction(clip);
+
+  action.setLoop(LoopOnce, 1);
+})();
 
 const hit = api.hit = new Mesh(new CylinderGeometry(0.1, 0.5, 1, 2**5, 1, true),
   new MeshToonMaterial({
     transparent: true, opacity: 0.5, side: DoubleSide, depthWrite: false,
-    color: colors.own[team], fog: false
+    color: colors.own[team], fog: false, gradientMap
   }));
 
 hit.visible = false;
@@ -159,25 +193,46 @@ hit.geometry.translate(0, 0.5, 0);
 hit.geometry.rotateX(pi*0.5);
 scene.add(hit);
 
-const traces = new Group();
+const traces = api.traces = {
+  group: new Group(),
+  mesh: new Mesh(forms.geometry,
+    new MeshToonMaterial({
+      transparent: true, opacity: 0.6, side: DoubleSide, depthWrite: false,
+      color: colors.own[team], fog: false, gradientMap
+    })),
+  frames: { drawRangeSpeed: 1 }
+};
 
-const traceMaterial = new MeshToonMaterial({
-  transparent: true, opacity: 0.7, side: DoubleSide, depthWrite: false,
-  color: colors.own[team], fog: false
-});
+// @todo Work out how to animate the `drawRange` here... can't parse the path.
+// @todo Animate the clip planes of the `hint`.
+(() => {
+  const { mesh, frames } = traces;
+  const mixer = traces.mixer = new AnimationMixer(mesh);
+  const o1 = mesh.material.opacity;
+  const o0 = o1*0.5;
+
+  const fo = frames.opacity = new NumberKeyframeTrack('.material.opacity',
+    [0, 0.9, 1.6], [o0, o1, o0], InterpolateSmooth);
+
+  const clip = traces.clip = new AnimationClip('@', -1, [fo]);
+
+  (traces.action = mixer.clipAction(clip)).play();
+})();
 
 function toTrace(x, y, z, r) {
-  const t = new Mesh(forms.geometry, traceMaterial);
+  const { mesh, group } = traces;
+  const t = mesh.clone();
   const { position: p, scale: s } = t;
 
   p.set(x, y, z);
   s.multiplyScalar(r*inner);
-  traces.add(t);
+  // @todo Track the time it was added, to remove when its data arrives?
+  group.add(t);
 
   return t;
 }
 
-scene.add(traces);
+scene.add(traces.group);
 
 const raycaster = api.raycaster = new Raycaster();
 
@@ -192,12 +247,24 @@ const stats = api.stats = ((query.has('stats'))? new Stats() : null);
 
 stats && $body.appendChild(stats.dom);
 
-let needRender = false;
+// let needRender = false;
+let needRender = true;
 
-const render = api.render = () => {
+const render = api.render = (dt = 0) => {
   // console.log('render');
+  hold.mixer.update(dt);
+  traces.mixer.update(dt);
   renderer.render(scene, camera);
-  needRender = false;
+
+  // const { geometry: g, frames: { drawRangeSpeed: drs } } = traces;
+  // const { drawRange: { start: ds0, count: dc0 }, index: { count: gc } } = g;
+  // const to = gc*0.3*drs*dt;
+  // const ds1 = (ds0+to)%gc;
+  // const dc1 = (dc0+to)%gc;
+
+  // g.setDrawRange(min(ds1, dc1), max(ds1, dc1));
+
+  // needRender = false;
 };
 
 const resize = api.resize = () => {
@@ -215,28 +282,38 @@ const frame = api.frame = () => {
 
   const dt = clock.getDelta();
 
-  (orbit.update(dt) || needRender) && render();
+  (orbit.update(dt) || needRender) && render(dt);
   stats?.update?.();
 }
 
-const held = {};
-const hold = 1e3;
+const clearHeld = api.clearHeld = () => {
+  const { held, action, mesh } = hold;
 
-const clearHeld = api.clearHeld = (id) => {
-  const t = held[id];
+  action.stop();
+  mesh.visible = false;
 
-  clearTimeout(t);
-  delete held[id];
+  delete hold.held;
+  clearTimeout(held);
 
-  return t;
+  return held;
 };
 
-// @todo Animate hint color over time.
-$canvas.addEventListener('pointerdown', ({ pointerId: id }) => {
-  clearTimeout(held[id]);
+$canvas.addEventListener('pointermove', clearHeld);
+$canvas.addEventListener('pointerup', clearHeld);
+$canvas.addEventListener('pointercancel', clearHeld);
+$canvas.addEventListener('pointerout', clearHeld);
+$canvas.addEventListener('pointerleave', clearHeld);
 
-  held[id] = setTimeout(() => {
-      if(!clearHeld(id)) { return; }
+// @todo Animate hint color over time.
+$canvas.addEventListener('pointerdown', () => {
+  const { mesh, wait, action } = hold;
+
+  clearHeld();
+  mesh.visible = true;
+  action.play();
+
+  hold.held = setTimeout(() => {
+      if(!clearHeld()) { return; }
 
       const { visible: hv, scale: hs, position: hp } = hint;
 
@@ -258,24 +335,16 @@ $canvas.addEventListener('pointerdown', ({ pointerId: id }) => {
       console.log('create', to);
       olta.create('forms', to);
       toTrace(x, y, z, r);
-      hint.visible = false;
-      needRender = true;
+      hint.visible = mesh.visible = false;
+      // needRender = true;
     },
-    hold);
+    wait);
 });
-
-const lift = (e) => clearHeld(e.pointerId);
-
-$canvas.addEventListener('pointermove', lift);
-$canvas.addEventListener('pointerup', lift);
-$canvas.addEventListener('pointercancel', lift);
-$canvas.addEventListener('pointerout', lift);
-$canvas.addEventListener('pointerleave', lift);
 
 $canvas.addEventListener('pointermove', ({ clientX: x, clientY: y }) => {
   const { data } = forms;
 
-  needRender = true;
+  // needRender = true;
 
   if(!data?.length) { return hit.visible = hint.visible = false; }
 
@@ -417,8 +486,7 @@ const dataToScene = api.dataToScene = (to) => {
     },
     data);
 
-  needRender = true;
-  // console.log('forms', forms);
+  // needRender = true;
 };
 
 const update = api.update = (state) => {
