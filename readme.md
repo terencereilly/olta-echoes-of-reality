@@ -50,4 +50,17 @@
       - Creating: `Anyone` can create a document
       - Updating: `Only admin` can update `whole document`
     - Initial state
-      - Generate `1000` documents with `random` properties
+      - For test only - generate `1000` documents with `random` properties
+
+## Links and references
+
+Main:
+- [Look development on Google Drive](https://drive.google.com/drive/folders/1a1ijLe0Oapmwl8sazFcAxCC4-wwHbQmu)
+  - [Aesthetic references on Google Drive](https://drive.google.com/drive/folders/15muWw-6zDN231kTFpMiXRJbjLSmma06s)
+  - [Post-processing references on Google Drive](https://drive.google.com/drive/folders/1202eJcl-x1M3VW9xI-kOsPNYzK16gC5x)
+- [Notes on Figma](https://www.figma.com/board/p1FvZu0YFVoz9csFmgjDek/Echoes-of-Reality---Figma-Draft-1?node-id=0-1)
+- [Original pitch on Google Docs](https://docs.google.com/document/d/1h7mCkPrX-oXGJyxdAgGiwytHayWF7XKGbIyMQ5_hTSc/edit#heading=h.vtx31ytow03o)
+
+Other:
+- [Streaming collision detection](https://0fps.net/2015/01/23/collision-detection-part-3-benchmarks/)
+- [thi.ng collision](https://github.com/thi-ng/umbrella/tree/develop/packages/geom-accel)

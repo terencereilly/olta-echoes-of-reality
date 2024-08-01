@@ -2,17 +2,16 @@
  * @todo Intro and team selection interaction.
  * @todo Icons to explain `hunt`, `team`, `flee` interaction.
  * @todo Setup an admin mode to allow update/delete to moderate contributions.
- * @todo Address Terrence's Figma notes.
+ *
  * @todo Offset touch target to above fingertip so it's visible.
  * @todo Distinct touch interactions for moving target versus camera.
- * @todo Style updates according to Terrence's mood, colour, post references.
  * @todo Make camera move more consistently, especially dolly out...
+ * @todo Style updates according to Terrence's mood, colour, post references.
  * @todo Replay time: add shapes in sequence (by `_sortKey` or `_id`?),
  *   on intro or idle.
- * @todo Maybe add sphere BVH to optimise later.
- * @todo Use collision detection and spatial partition to constrain forms from
- *   interpenetration while altering radius... but it's tricky, for now just
- *   allow interpenetration and try balance things with the growth/shrink rates.
+ *
+ * @todo Address Terrence's Figma notes.
+ * @todo Add sphere BVH to optimise later.
  */
 
 import { Olta } from '@olta/js-sdk';
@@ -59,11 +58,25 @@ const query = api.query = new URLSearchParams(location.search);
 
 let wallet;
 
+const $root = api.$root = document.documentElement;
+const $body = api.$body = document.body;
+const $canvas = api.$canvas = document.querySelector('canvas');
+
+const $teamPicks = api.$teamPicks = document
+  .querySelectorAll('.team-picker .team');
+
+function tween(at, to, ease, dt) {
+  const d = dt && to-at;
+
+  return d && at+(d*ease*dt);
+}
+
 const depths = api.depths = [1, 1e4];
 const [near, far] = depths;
 
 // Bounds are for maximum range and accuracy as `olta` only accepts integers.
 const bounds = api.bounds = [-intMax, intMax];
+
 // Bounds rescaled by this for front-end convenience with `three`.
 const positionScale = api.positionScale = 3e-13;
 
@@ -71,6 +84,11 @@ const radii = api.radii = [1, 1e2];
 const [r0, r1] = radii;
 
 const boundRadius = (intMax*positionScale)+r1;
+
+const boundary = api.boundary = new Box3();
+
+boundary.min.setScalar(-boundRadius);
+boundary.max.setScalar(boundRadius);
 
 const scales = api.scales = { growth: 1.5, shrink: 0.9, inner: 0.95, hit: 0.2 };
 
@@ -95,12 +113,17 @@ const colorMix = (alpha, by, to = new Color(), c = new Color()) =>
   to.lerpHSL(colorTo(by, c.copy(to)), alpha);
 
 const teams = api.teams = colors.teams.length;
-const team = api.team = parseInt(query.get('team') || floor(random()*teams));
+let team = api.team = 0;
 const hunt = (t) => (t+1)%teams;
 const flee = (t) => (t+2)%teams;
 
-const $body = api.$body = document.body;
-const $canvas = api.$canvas = document.querySelector('canvas');
+function teamTo(t) {
+  console.log('picked team', team = api.team = t);
+  $root.classList.add('team-picked', 'team-picked-'+t);
+}
+
+each((c, i) => $root.style.setProperty('--team-color-'+i, '#'+c.getHexString()),
+  colors.teams);
 
 const size = new Vector2();
 
@@ -127,18 +150,30 @@ const clock = api.clock = new Clock();
 
 const camera = api.camera = new PerspectiveCamera(60, 1, ...depths);
 const orbit = api.orbit = new CameraOrbitControls(camera, $canvas);
-const orbitStart = boundRadius*2;
+// const orbitStart = boundRadius*2;
+const orbitStart = 0;
 
 orbit.maxSpeed = 1e3;
+orbit.smoothTime = 0.1;
 orbit.infinityDolly = orbit.dollyToCursor = true;
 orbit.minDistance = orbit.maxDistance = r1;
 orbit.dollySpeed = 10;
 orbit.truckSpeed = 10;
-orbit.setLookAt(0, 0, orbitStart+orbit.minDistance, 0, 0, orbitStart, true);
+orbit.boundaryEnclosesCamera = true;
+orbit.setBoundary(boundary);
+orbit.setLookAt(0, 0, orbitStart+orbit.minDistance, 0, 0, orbitStart);
 orbit.saveState();
 
-// scene.fog = new Fog(0xffffff, ...depths);
-scene.fog = new Fog(0x000000, ...depths);
+const fog = api.fog = {
+  at: scene.fog = new Fog(0xffffff, 0, 0), ease: 0.2,
+  tween(dt) {
+    const { at: f, ease: e } = fog;
+    const { near: fn, far: ff } = f;
+
+    f.near = tween(fn, near, e, dt);
+    f.far = tween(ff, far, e, dt);
+  }
+};
 
 const lightCamera = api.lightCamera = new PointLight(0xffffff, 5e4, 0, 1.7);
 
@@ -172,14 +207,14 @@ function dataToSphere({ x, y, z, r }, s) {
 const hint = api.hint = {
   mesh: new Mesh(forms.geometry, new MeshToonMaterial({
     transparent: true, opacity: 0.4, side: DoubleSide, depthWrite: false,
-    color: colorTo('own', colorAt(team)), gradientMap
+    gradientMap
   })),
-  radius: 1, ease: 1e1,
+  radius: 0, ease: 1e1,
   tween(dt) {
     const { radius: r, ease: e, mesh: { scale: s } } = hint;
     const sr = s.x;
 
-    s.setScalar(sr+((r-sr)*e*dt));
+    s.setScalar(tween(sr, r, e, dt));
   }
 };
 
@@ -189,6 +224,7 @@ const hold = api.hold = {
   at: new Vector2(), moved2: 20
 };
 
+hint.mesh.scale.setScalar(hint.radius);
 scene.add(hint.mesh.add(hold.mesh));
 
 (function animateHold() {
@@ -212,13 +248,18 @@ scene.add(hint.mesh.add(hold.mesh));
 const hit = api.hit = new Mesh(new CylinderGeometry(0.1, 0.5, 1, 2**5, 1, true),
   new MeshToonMaterial({
     transparent: true, opacity: 0.6, side: DoubleSide, depthWrite: false,
-    color: hint.mesh.material.color.clone(), fog: false, gradientMap
+    color: hint.mesh.material.color.clone(), fog: false, gradientMap,
+    emissiveIntensity: 0.8
   }));
 
-hit.visible = false;
+hit.material.emissive = hit.material.color;
 hit.geometry.translate(0, 0.5, 0);
 hit.geometry.rotateX(pi*0.5);
 scene.add(hit);
+
+const hitFlip = (on) => $root.classList.toggle('hit', hit.visible = on);
+
+hitFlip(false);
 
 const traces = api.traces = {
   group: new Group(),
@@ -280,6 +321,7 @@ const render = api.render = (dt = 0) => {
   // console.log('render');
   hold.mixer.update(dt);
   traces.mixer.update(dt);
+  fog.tween(dt);
   hint.tween(dt);
   renderer.render(scene, camera);
 
@@ -348,7 +390,8 @@ $canvas.addEventListener('pointerdown', (e) => {
   hold.held = setTimeout(() => {
       if(!clearHeld()) { return; }
 
-      const { radius: r, mesh: { visible: hv, position: hp } } = hint;
+      const { radius: r, mesh: hm } = hint;
+      const { visible: hv, position: hp, scale: hs } = hm;
 
       if(!r || !hv) { return; }
 
@@ -368,7 +411,7 @@ $canvas.addEventListener('pointerdown', (e) => {
       olta.create('forms', to);
       toTrace(x, y, z, r);
       mesh.visible = false;
-      hint.radius = 0;
+      hs.setScalar(hint.radius = 0);
       // needRender = true;
     },
     wait);
@@ -379,7 +422,7 @@ $canvas.addEventListener('pointermove', (e) => {
 
   // needRender = true;
 
-  if(!data?.length) { return hint.radius = +(hit.visible = false); }
+  if(!data?.length) { return hint.radius = +hitFlip(false); }
 
   pointer.copy(e).divide(size).multiplyScalar(2).subScalar(1).multiply(axes);
   raycaster.setFromCamera(pointer, camera);
@@ -405,7 +448,7 @@ $canvas.addEventListener('pointermove', (e) => {
       ds, l2),
     data, Infinity);
 
-  if(l2 === Infinity) { return hint.radius = +(hit.visible = false); }
+  if(l2 === Infinity) { return hint.radius = +hitFlip(false); }
 
   const { t } = at;
   let ar = at.r;
@@ -413,7 +456,7 @@ $canvas.addEventListener('pointermove', (e) => {
   const hitColor = hit.material.color;
 
   hit.lookAt(v.copy(hit.position.copy(p)).add(p).sub(c));
-  hit.visible = true;
+  hitFlip(true);
 
   if(t !== team) {
     // colorTo(((t === hunt(team))? 'hunt' : 'flee'),
@@ -473,9 +516,12 @@ $canvas.addEventListener('pointermove', (e) => {
 //   needRender = true;
 // });
 
+
+hint.mesh.material.emissive = hint.mesh.material.color;
+hint.mesh.material.emissiveIntensity = 0.5;
+
 addEventListener('resize', resize);
 resize();
-frame();
 
 const olta = api.olta = Olta();
 
@@ -551,3 +597,9 @@ each(($b) => $b.addEventListener('click', () => {
     // orbit.setLookAt(0, 0, orbitStart+orbit.minDistance, 0, 0, orbitStart, true);
   }),
   document.querySelectorAll('.recenter'));
+
+each(($p, i) => $p.addEventListener('click', () => {
+    teamTo(i);
+    setTimeout(frame, 9e2);
+  }),
+  $teamPicks);
