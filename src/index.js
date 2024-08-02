@@ -1,8 +1,4 @@
 /**
- * @todo Intro and team selection interaction.
- * @todo Icons to explain `hunt`, `team`, `flee` interaction.
- * @todo Setup an admin mode to allow update/delete to moderate contributions.
- *
  * @todo Offset touch target to above fingertip so it's visible.
  * @todo Distinct touch interactions for moving target versus camera.
  * @todo Make camera move more consistently, especially dolly out...
@@ -25,7 +21,8 @@ import {
     NumberKeyframeTrack, VectorKeyframeTrack,
     AnimationClip, AnimationMixer,
     InterpolateSmooth, InterpolateLinear,
-    LoopOnce
+    LoopOnce, LoopPingPong,
+    Object3D
   } from 'three';
 
 import Stats from 'three/examples/jsm/libs/stats.module.js';
@@ -55,6 +52,7 @@ const cache = api.cache = {
 };
 
 const query = api.query = new URLSearchParams(location.search);
+const god = api.god = query.has('god');
 
 let wallet;
 
@@ -218,6 +216,11 @@ const hint = api.hint = {
   }
 };
 
+const hintCamera = api.hintCamera = new Object3D();
+
+hintCamera.position.set(0, 0, -r1*2);
+camera.add(hintCamera);
+
 const hold = api.hold = {
   mesh: new Mesh(hint.mesh.geometry, hint.mesh.material.clone()),
   frames: {}, wait: 1e3,
@@ -242,7 +245,8 @@ scene.add(hint.mesh.add(hold.mesh));
   const clip = hold.clip = new AnimationClip('@', -1, [fs, fo]);
   const action = hold.action = mixer.clipAction(clip);
 
-  action.setLoop(LoopOnce, 1);
+  // action.setLoop(LoopOnce, 1);
+  action.setLoop(LoopPingPong, Infinity);
 })();
 
 const hit = api.hit = new Mesh(new CylinderGeometry(0.1, 0.5, 1, 2**5, 1, true),
@@ -358,7 +362,8 @@ const frame = api.frame = () => {
 const clearHeld = api.clearHeld = () => {
   const { held, action, mesh } = hold;
 
-  action.stop();
+  // action.stop();
+  action.paused = true;
   mesh.visible = false;
   clearTimeout(held);
   delete hold.held;
@@ -371,55 +376,16 @@ $canvas.addEventListener('pointercancel', clearHeld);
 $canvas.addEventListener('pointerout', clearHeld);
 $canvas.addEventListener('pointerleave', clearHeld);
 
-$canvas.addEventListener('pointermove', (e) => {
+function moveClearHeld(e) {
   const { held, at, moved2 } = hold;
 
   held && (at.distanceToSquared(e) > moved2) && clearHeld();
-});
-
-// @todo Animate hint color over time.
-$canvas.addEventListener('pointerdown', (e) => {
-  const { mesh, wait, action, at } = hold;
-
-  clearHeld();
-  mesh.material.color.copy(hint.mesh.material.color);
-  mesh.visible = true;
-  action.play();
-  at.copy(e);
-
-  hold.held = setTimeout(() => {
-      if(!clearHeld()) { return; }
-
-      const { radius: r, mesh: hm } = hint;
-      const { visible: hv, position: hp, scale: hs } = hm;
-
-      if(!r || !hv) { return; }
-
-      const { x, y, z } = hp;
-      const ps = positionScale;
-
-      // @todo Check `state` settings to use dynamically, for limits etc?
-      const to = {
-        t: team,
-        x: round(clamp(x/ps, ...bounds)),
-        y: round(clamp(y/ps, ...bounds)),
-        z: round(clamp(z/ps, ...bounds)),
-        r: round(clamp(r, ...radii))
-      };
-
-      console.log('create', to);
-      olta.create('forms', to);
-      toTrace(x, y, z, r);
-      mesh.visible = false;
-      hs.setScalar(hint.radius = 0);
-      // needRender = true;
-    },
-    wait);
-});
+}
 
 $canvas.addEventListener('pointermove', (e) => {
   const { data } = forms;
 
+  moveClearHeld(e);
   // needRender = true;
 
   if(!data?.length) { return hint.radius = +hitFlip(false); }
@@ -485,7 +451,6 @@ $canvas.addEventListener('pointermove', (e) => {
   // @todo Optimise using squared-distance comparisons.
   r = reduce((to, d) => min(to, dataToSphere(d, s).distanceToPoint(p)), df, r);
 
-  // @todo Animate hint radius over time.
   if(r < r0) { return hint.radius = 0; }
 
   const hintColor = colorAt(team, hint.mesh.material.color);
@@ -500,8 +465,63 @@ $canvas.addEventListener('pointermove', (e) => {
   colorMix(unlerp(...radii, r), 'grow', hintColor, color);
   hint.radius = r;
   hint.mesh.position.copy(p);
-  hint.visible = true;
   hit.scale.setScalar(r*sh);
+});
+
+$canvas.addEventListener('pointerdown', (e) => {
+  const { button, pointerId } = e;
+  const alt = (button === 2);
+  const spawn = god && alt && !hit.visible;
+  // const clean = god && alt && hit.visible;
+  const { mesh, wait, action, at } = hold;
+  const { position: hp, scale: hs, material: { color: hc } } = hint.mesh;
+
+  if(spawn) {
+    colorAt(team, hc);
+    hs.setScalar(hint.radius = r1);
+    hintCamera.getWorldPosition(hp);
+  }
+
+  clearHeld();
+  mesh.material.color.copy(hc);
+  mesh.visible = true;
+  action.stop().play();
+  at.copy(e);
+
+  function go(r) {
+    if(!r) { return; }
+
+    const { x, y, z } = hp;
+    const ps = positionScale;
+
+    // @todo Check `state` settings to use dynamically, for limits etc?
+    const to = {
+      t: team,
+      x: round(clamp(x/ps, ...bounds)),
+      y: round(clamp(y/ps, ...bounds)),
+      z: round(clamp(z/ps, ...bounds)),
+      r: round(clamp(r, ...radii))
+    };
+
+    console.log('create', to);
+    olta.create('forms', to);
+    toTrace(x, y, z, r);
+    mesh.visible = false;
+    hs.setScalar(hint.radius = 0);
+    // needRender = true;
+  }
+
+  if(!spawn) {
+    return hold.held = setTimeout(() => clearHeld() && go(hint.radius), wait);
+  }
+
+  $root.addEventListener('pointerup', function spawned(e) {
+    if(pointerId !== e.pointerId) { return; }
+
+    $root.removeEventListener('pointerup', spawned);
+    go(mesh.scale.x*hint.radius);
+    clearHeld();
+  });
 });
 
 // @todo Find a way to sensibly set the camera to orbit around the intersection.
@@ -515,7 +535,6 @@ $canvas.addEventListener('pointermove', (e) => {
 //   orbit.setOrbitPoint(px, py, pz);
 //   needRender = true;
 // });
-
 
 hint.mesh.material.emissive = hint.mesh.material.color;
 hint.mesh.material.emissiveIntensity = 0.5;
@@ -593,7 +612,7 @@ olta.onUpdate(update);
 
 each(($b) => $b.addEventListener('click', () => {
     orbit.reset(true);
-    // Doesn't seem to work with the above reset.
+    // Doesn't seem to work with the above reset?
     // orbit.setLookAt(0, 0, orbitStart+orbit.minDistance, 0, 0, orbitStart, true);
   }),
   document.querySelectorAll('.recenter'));
