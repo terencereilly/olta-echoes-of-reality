@@ -503,7 +503,12 @@ $canvas.addEventListener('pointerdown', (e) => {
       r: round(clamp(r, ...radii))
     };
 
+   // To create custom spheres in artwork
+    // const test = { t: 1, x: 0, y: 20, z:0, r: 50};
+    // olta.create('forms', test);
+
     console.log('create', to);
+
     olta.create('forms', to);
     toTrace(x, y, z, r);
     mesh.visible = false;
